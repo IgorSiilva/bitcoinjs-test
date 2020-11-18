@@ -17,10 +17,6 @@ const fetchAddressCollectionStats = async (node) => {
   let nextUnusedAddress;
   while (gap < 20) {
     const childNode = node.derive(addressIndex);
-    /*     const { address } = bitcoin.payments.p2wpkh({
-      pubkey: childNode.publicKey,
-      network: bitcoin.networks.testnet,
-    }); */
 
     const { address } = bitcoin.payments.p2sh({
       redeem: bitcoin.payments.p2wpkh({
@@ -31,8 +27,6 @@ const fetchAddressCollectionStats = async (node) => {
     });
 
     const addressStats = await axios.get(`${baseUrl}/address/${address}`);
-
-    console.log(addressStats.data);
 
     const { chain_stats, mempool_stats } = addressStats.data;
 
@@ -147,8 +141,7 @@ const createTransaction = async (
   targetAddress,
   feeRate,
   changeAddress,
-  mnemonic,
-  masterPublicKey
+  mnemonic
 ) => {
   const utxos = await fetchUtxos(addressesWithUtxo);
 
@@ -176,7 +169,9 @@ const createTransaction = async (
       throw new Error("Could not find public key for input");
     }
 
-    const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: inputPublicKey });
+    const p2sh = bitcoin.payments.p2sh({
+      redeem: bitcoin.payments.p2wpkh({ pubkey: inputPublicKey }),
+    });
 
     psbt.addInput({
       hash: input.txid,
@@ -189,9 +184,10 @@ const createTransaction = async (
         },
       ],
       witnessUtxo: {
-        script: p2wpkh.output,
+        script: p2sh.output,
         value: input.value,
       },
+      redeemScript: p2sh.redeem.output,
     });
   }
 
@@ -204,9 +200,16 @@ const createTransaction = async (
       address: output.address,
       value: output.value,
     });
+
+    console.log({
+      address: output.address,
+      value: output.value,
+    });
   }
 
   await psbt.signAllInputsHDAsync(hdRoot);
+
+  console.log(psbt.toBase64());
 
   const transaction = psbt.finalizeAllInputs().extractTransaction();
 
@@ -218,6 +221,7 @@ const createTransaction = async (
 };
 
 async function generateWallet() {
+  //cria um mnemonic aleatorio para ser usado na função bip39.mnemonicToSeed
   const mnemonic = bip39.generateMnemonic();
 
   const seed = await bip39.mnemonicToSeed(
@@ -228,99 +232,85 @@ async function generateWallet() {
 
   var hdMaster = bitcoin.bip32.fromSeed(seed, bitcoinNetwork);
 
-  //const child = hdMaster.derivePath("m/84'/0'/0'");
-
   var derivedNode = hdMaster.derivePath("m/84'/0'/0'").neutered();
 
   const masterPublicKey = derivedNode.toBase58();
 
-  /*   const hdNode = bitcoin.bip32.fromBase58(masterPublicKey, bitcoinNetwork);
+  const hdNode = bitcoin.bip32.fromBase58(
+    masterPublicKey,
+    bitcoin.networks.testnet
+  );
 
-  const teste = await fetchAddressCollectionStats(hdNode.derive(0));
-  const teste1 = await fetchAddressCollectionStats(hdNode.derive(1)); */
-  const walletStatistics = await fetchWalletStats(masterPublicKey);
+  const node = hdNode.derive(0);
+  const childNode = node.derive(0);
 
-  const transactionMetadata = await createTransaction(
+  const { address } = bitcoin.payments.p2sh({
+    redeem: bitcoin.payments.p2wpkh({
+      pubkey: childNode.publicKey,
+      network: bitcoin.networks.testnet,
+    }),
+    network: bitcoin.networks.testnet,
+  });
+
+  /* const walletStatistics = await fetchWalletStats(masterPublicKey); */
+
+  /*   const transactionMetadata = await createTransaction(
     walletStatistics.addressesWithUtxo,
     { address: "2N3ScVtHRYgz6qYmeKDAf3fmwJinV3xhRsy", value: 40000 },
     40,
     walletStatistics.nextUnusedChangeAddress.address,
     "idea auction predict senior clinic extra common holiday match happy afford distance",
     masterPublicKey
+  ); */
+}
+
+async function getAddressInfo() {
+  const seed = await bip39.mnemonicToSeed(
+    "idea auction predict senior clinic extra common holiday match happy afford distance"
   );
 
-  //const key = bitcoin.ECPair.fromWIF(key1.toWIF(), bitcoin.networks.testnet);
+  var bitcoinNetwork = bitcoin.networks.testnet;
 
-  //console.log(key1.toWIF());
+  var hdMaster = bitcoin.bip32.fromSeed(seed, bitcoinNetwork);
 
-  /*  const { address } = bitcoin.payments.p2sh({
-    redeem: bitcoin.payments.p2wpkh({
-      pubkey: key.publicKey,
-      network: bitcoin.networks.testnet,
-    }),
-    network: bitcoin.networks.testnet,
-  });
+  var derivedNode = hdMaster.derivePath("m/84'/0'/0'").neutered();
 
-  console.log(address);
+  const masterPublicKey = derivedNode.toBase58();
 
-  const baseUrl = "https://blockstream.info/testnet/api";
+  const walletStatistics = await fetchWalletStats(masterPublicKey);
 
-  const utxosAddress = await axios.get(`${baseUrl}/address/${address}/utxo`);
+  console.log(walletStatistics);
+}
 
-  console.log(utxosAddress.data); */
+async function sendBtc() {
+  const seed = await bip39.mnemonicToSeed(
+    "idea auction predict senior clinic extra common holiday match happy afford distance"
+  );
 
-  /*   let alice = bitcoin.ECPair.fromWIF(key1.toWIF(), bitcoin.networks.testnet);
-  let bob = bitcoin.ECPair.fromWIF(
-    "cMkopUXKWsEzAjfa1zApksGRwjVpJRB3831qM9W4gKZsLwjHXA9x",
+  var bitcoinNetwork = bitcoin.networks.testnet;
+
+  var hdMaster = bitcoin.bip32.fromSeed(seed, bitcoinNetwork);
+
+  var derivedNode = hdMaster.derivePath("m/84'/0'/0'").neutered();
+
+  const masterPublicKey = derivedNode.toBase58();
+
+  const hdNode = bitcoin.bip32.fromBase58(
+    masterPublicKey,
     bitcoin.networks.testnet
   );
 
-  let lockTime = bip65.encode({
-    utc: new Date(new Date().toUTCString()) + 3600 * 3,
-  });
+  const walletStatistics = await fetchWalletStats(masterPublicKey);
 
-  let redeemScript = cltvCheckSigOutput(alice, bob, lockTime);
-  let scriptPubKey = bitcoin.script.scriptHash.output.encode(
-    bitcoin.crypto.hash160(redeemScript)
+  const transactionMetadata = await createTransaction(
+    walletStatistics.addressesWithUtxo,
+    //enviando 4000 btc para a wallet abaixo
+    { address: "2N3ScVtHRYgz6qYmeKDAf3fmwJinV3xhRsy", value: 40000 },
+    //fee
+    40,
+    walletStatistics.nextUnusedChangeAddress.address,
+    "idea auction predict senior clinic extra common holiday match happy afford distance"
   );
-  console.log(
-    bitcoin.address.fromOutputScript(scriptPubKey, bitcoin.networks.testnet)
-  ); */
-
-  /* 
-  const { address } = bitcoin.payments.p2sh({
-    redeem: bitcoin.payments.p2wpkh({
-      pubkey: child.publicKey,
-      network: bitcoin.networks.testnet,
-    }),
-    network: bitcoin.networks.testnet,
-  });
-
-  console.log(address); */
-
-  /*   const derivedNode = hdMaster.derivePath("m/84'/0'/0'").neutered();
-  const masterPublicKey = derivedNode.toBase58();
-
-  const hdNode = bitcoin.bip32.fromBase58(masterPublicKey, bitcoinNetwork);
-
-  const childNode1 = hdNode.derive(0).derive(0);
-  const childNode2 = hdNode.derive(1).derive(1);
-
-  const { address } = bitcoin.payments.p2wpkh({
-    pubkey: childNode1.publicKey,
-  });
-
-  console.log(address);
-
-  const res = await axios.get(`${baseUrl}/address/${address}`);
-
-  console.log(res.data); */
 }
 
-generateWallet();
-
-//console.log(seed);
-
-//let keypair = bitcoin.ECPair.makeRandom({ network: testnet });
-/* bitcoin.bip32;
-console.log(keypair); */
+getAddressInfo();
